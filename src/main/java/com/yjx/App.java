@@ -1,5 +1,7 @@
 package com.yjx;
 
+import java.awt.*;
+
 /**
  * Hello world!
  *
@@ -8,6 +10,7 @@ public class App
 {
     public static void main( String[] args )
     {
-        System.out.println( "Hello World!" );
+        Font font = new Font("TypoSlab Irregular Shadowed_Demo", Font.BOLD, 100);
+        System.out.println(font.getName());
     }
 }
