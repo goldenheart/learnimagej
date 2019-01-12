@@ -10,14 +10,9 @@ import com.drew.metadata.file.FileSystemDirectory;
 import com.google.common.collect.Lists;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.sanselan.ImageFormat;
-import org.apache.sanselan.ImageInfo;
 import org.apache.sanselan.ImageReadException;
 import org.apache.sanselan.Sanselan;
 import org.apache.sanselan.common.IImageMetadata;
-import org.apache.sanselan.formats.jpeg.JpegImageMetadata;
-import org.apache.sanselan.formats.tiff.TiffField;
-import org.apache.sanselan.formats.tiff.constants.TiffConstants;
 
 import javax.imageio.*;
 import javax.imageio.stream.ImageOutputStream;
@@ -34,12 +29,8 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Date;
-import java.util.Objects;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.List;
+import java.util.*;
 
 /**
  * @Version 1.0
@@ -52,106 +43,81 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class ImagingSample {
     private final static File SOURCE_PATH = new File("/Users/junxiaoyang/OneDrive/3寸-无白边-加日期/");
     private final static File TARGET_PATH = new File("/Users/junxiaoyang/Documents/testdata/imageio/adddate/");
+    private static List<FileNameDateParser> DATEPARSERS = new ArrayList<>();
+    static int hasDate = 0;
+    static int noDate = 0;
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws IOException {
+        Properties properties = RegexpPropertyLoader.load();
+        for (String propertyName : properties.stringPropertyNames()) {
+            if (propertyName.endsWith("regexp")) {
+                DATEPARSERS.add(new FileNameDateParser(properties.getProperty(propertyName)));
+            }
+        }
         ArrayList<File> sourceFiles = Lists.newArrayList();
         if (SOURCE_PATH.isDirectory()) {
             sourceFiles.addAll(Arrays.asList(Objects.requireNonNull(SOURCE_PATH.listFiles())));
         }
+
         for (File sourceFile : sourceFiles) {
-            if (!sourceFile.getName().equals("IMG_9359.JPG")) {
-                continue;
-            }
 //            revertName(sourceFile);
-//            log.info(sourceFile.getName());
-            String dateFormatted = getDate(sourceFile);
-//            if (isFile.getName().startsWith(NO_METADATA) || isFile.getName().startsWith(DATA_BLOCK) || isFile.getName().startsWith(NO_DATE)) {
-//                continue;
-//            }
-//            if (isFile.getName().startsWith("IMG")) {
-//                try {
-//                    writetofile(isFile);
-//                } catch (Exception e) {
-//                    log.error("file: {} message: {}", isFile.getName(), e.getMessage());
-//                }
-//            }
+            try {
+                writetofile(sourceFile);
+            } catch (Exception e) {
+                log.error("file: {} message: {}", sourceFile.getName(), e.getMessage());
+            }
         }
-        log.info("no metadata files {}, block files {}", noMetaDataIndex.get(), blockFilesIndex.get());
+        log.info("has date files {}, no date files {}", hasDate, noDate);
     }
 
-    static DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-
-    static AtomicInteger noMetaDataIndex = new AtomicInteger(0);
-    static AtomicInteger blockFilesIndex = new AtomicInteger(0);
     private static final String NO_METADATA = "NoMetadata_";
     private static final String DATA_BLOCK = "Datablock_";
     private static final String NO_DATE = "NoDate_";
 
     private static void writetofile(File source) {
-        ImageInfo imageInfo;
-        IImageMetadata imageMetadata;
         try {
-            imageInfo = Sanselan.getImageInfo(source);
-            imageMetadata = Sanselan.getMetadata(source);
-        } catch (ImageReadException | IOException e) {
-            blockFilesIndex.incrementAndGet();
-            rename(source, DATA_BLOCK + source.getName());
-            return;
-        }
-        if (imageInfo != null) {
-            if (!ImageFormat.IMAGE_FORMAT_JPEG.name.equals(imageInfo.getFormat().name)) {
-                log.info("{} image type is {}", source.getName(), imageInfo.getFormatName());
+            File osFile = new File(TARGET_PATH.getPath() + "/" + source.getName());
+            String formatDate = getDate(source);
+            if (formatDate == null) {
+                noDate++;
+                log.warn("{} no date info", source.getName());
+                return;
             }
-        }
-        if (imageMetadata == null) {
-            log.warn("{} no metadata", source.getName());
-            noMetaDataIndex.incrementAndGet();
-            rename(source, NO_METADATA + source.getName());
-            return;
-            //            moveFile(file.getName());
-        }
-        try {
-            if (imageMetadata instanceof JpegImageMetadata) {
-                JpegImageMetadata jpegImageMetadata = (JpegImageMetadata) imageMetadata;
-                TiffField createDateField = jpegImageMetadata.findEXIFValue(TiffConstants.EXIF_TAG_CREATE_DATE);
-                File osFile = new File(TARGET_PATH.getPath() + "/" + source.getName());
-                String date = createDateField.getValue().toString();
-                boolean endsWith = date.endsWith("\u0000");
-                if (endsWith) {
-                    date = date.substring(0, date.length() - 1);
-                    LocalDateTime localDateTime = LocalDateTime.parse(date, DateTimeFormatter.ofPattern("yyyy:MM:dd HH:mm:ss"));
-                    date = localDateTime.format(FORMATTER);
-                    log.info("name: {} date: {} after: {}", source.getName(), createDateField.getValue(), date);
-                }
-                addTextWatermark(source, date, osFile, imageInfo.getFormat().name);
+            hasDate++;
+            String format = getFormat(source);
+            if (format == null) {
+                log.warn("{} unknow format", source.getName());
+                return;
             }
-        } catch (ImageReadException | IOException | NullPointerException e) {
+            addTextWatermark(source, formatDate, osFile, format);
+        } catch (IOException | NullPointerException e) {
             log.warn("no create date {}", source.getName());
-            rename(source, NO_DATE + source.getName());
         }
     }
 
 
     private static String getDate(File source) {
-        String dateFormatted;
+        String formatDate;
         try {
             Metadata metadata = ImageMetadataReader.readMetadata(source);
             //1.metadata
-            dateFormatted = getDateTimeFromDirectory(metadata.getFirstDirectoryOfType(ExifSubIFDDirectory.class));
-            if (dateFormatted != null) {
-                return dateFormatted;
+            formatDate = getDateTimeFromDirectory(metadata.getFirstDirectoryOfType(ExifSubIFDDirectory.class));
+            if (formatDate != null) {
+                return formatDate;
             }
-            log.warn("{} no datetime in exif directory use drew imaging", source.getName());
+            log.debug("{} no datetime in exif directory use drew imaging", source.getName());
             //2.file name
-            dateFormatted = getDateTimeFromFileName(source);
+            formatDate = getDateTimeFromFileName(source);
+            if (formatDate != null) {
+                return formatDate;
+            }
+            log.debug("{} no datetime in filename", source.getName());
             //3.modifytime
-            dateFormatted = getDateTimeFromDirectory(metadata.getFirstDirectoryOfType(FileSystemDirectory.class));
-            if (dateFormatted != null) {
-                return dateFormatted;
+            formatDate = getDateTimeFromDirectory(metadata.getFirstDirectoryOfType(FileSystemDirectory.class));
+            if (formatDate != null) {
+                return formatDate;
             }
             log.warn("{} no datetime in file use drew imaging", source.getName());
-            //            printAllTags(source);
-            log.info("{} create time is {} ", source.getName(), dateFormatted);
             return null;
         } catch (ImageProcessingException | IOException e) {
             log.error("{} get metadata error", source.getName());
@@ -160,14 +126,20 @@ public class ImagingSample {
     }
 
     private static String getDateTimeFromFileName(File source) {
-        //TODO
+        for (FileNameDateParser dateparser : DATEPARSERS) {
+            boolean match = dateparser.isMatch(source.getName());
+            if (!match) {
+                continue;
+            }
+            return dateparser.getDate();
+        }
         return null;
     }
 
     private static String formatDateTime(Date date) {
         String dateFormatted;
         LocalDateTime localDateTime = LocalDateTime.ofInstant(date.toInstant(), ZoneId.systemDefault());
-        dateFormatted = localDateTime.format(FORMATTER);
+        dateFormatted = localDateTime.format(FileNameDateParser.FORMATTER);
         return dateFormatted;
     }
 
@@ -219,7 +191,7 @@ public class ImagingSample {
     }
 
     private static String getFormat(File source) {
-        if (StringUtils.endsWithIgnoreCase(source.getName(), "JPG")) {
+        if (StringUtils.endsWithIgnoreCase(source.getName(), "JPG") || StringUtils.endsWithIgnoreCase(source.getName(), "JPEG")) {
             return "JPEG";
         }
         if (StringUtils.endsWithIgnoreCase(source.getName(), "PNG")) {
