@@ -46,6 +46,7 @@ public class ImagingSample {
     private static List<FileNameDateParser> DATEPARSERS = new ArrayList<>();
     static int hasDate = 0;
     static int noDate = 0;
+    static String fileName;
 
     public static void main(String[] args) throws IOException {
         Properties properties = RegexpPropertyLoader.load();
@@ -62,6 +63,8 @@ public class ImagingSample {
         for (File sourceFile : sourceFiles) {
 //            revertName(sourceFile);
             try {
+                fileName = sourceFile.getName();
+//                printAllTags(sourceFile);
                 writetofile(sourceFile);
             } catch (Exception e) {
                 log.error("file: {} message: {}", sourceFile.getName(), e.getMessage());
@@ -234,7 +237,7 @@ public class ImagingSample {
         //Get Reader
         ImageReader jpgReader = getReader(source, imageFormat);
         BufferedImage imageSource = jpgReader.read(0);
-        //draw image
+//        draw image
         BufferedImage bufferedImageOutput = drawText(text, imageSource);
         //get and config writer
         ImageWriter jpegWriter = getImageWriter(imageFormat);
@@ -261,9 +264,6 @@ public class ImagingSample {
     }
 
     private static BufferedImage drawText(String text, BufferedImage imageSource) {
-//        int imageType = imageSource.getType();
-//        BufferedImage watermarked = new BufferedImage(imageSource.getWidth(), imageSource.getHeight(), imageType);
-
         ColorSpace sRGBColorSpace = ColorSpace.getInstance(ColorSpace.CS_sRGB);
         ColorModel colorModel = new ComponentColorModel(sRGBColorSpace, false, false, Transparency.OPAQUE, DataBuffer.TYPE_BYTE);
         BufferedImage watermarked = new BufferedImage(colorModel, colorModel.createCompatibleWritableRaster(imageSource.getWidth(), imageSource.getHeight()), colorModel.isAlphaPremultiplied(), null);
@@ -273,15 +273,16 @@ public class ImagingSample {
         AlphaComposite alphaChannel = AlphaComposite.getInstance(AlphaComposite.SRC_OVER);
         textGraphics.setComposite(alphaChannel);
         //微软雅黑 粗体 26号字  投影4像素，或是描边4像素
-        textGraphics.setColor(Color.BLACK);
-        textGraphics.setFont(getFont("TypoSlab Irregular Shadowed Demo"));
-//        textGraphics.setFont(new Font("Here & Not Found", Font.BOLD, 100));
+        textGraphics.setColor(Color.WHITE);
+        int size = calculateFontSize(imageSource);
+        textGraphics.setFont(getFont("TypoSlab Irregular Shadowed Demo", size));
+
         FontMetrics fontMetrics = textGraphics.getFontMetrics();
         Rectangle2D rect = fontMetrics.getStringBounds(text, textGraphics);
-
+        log.debug("rect h {} w {}", rect.getHeight(), rect.getWidth());
         // calculate center of the imageSource
-        int centerX = imageSource.getWidth() - ((int) rect.getWidth() + 20);
-        int centerY = imageSource.getHeight() - ((int) rect.getHeight() + 5);
+        int centerX = imageSource.getWidth() - ((int) rect.getWidth() + 70);
+        int centerY = imageSource.getHeight() - ((int) rect.getHeight());
 
 //        setGrayRGB(imageSource, watermarked);
         // add text overlay to the imageSource
@@ -289,8 +290,14 @@ public class ImagingSample {
         return watermarked;
     }
 
-    private static Font getFont(String text) {
-        Font font = new Font(text, Font.BOLD, 100);
+    private static int calculateFontSize(BufferedImage imageSource) {
+        int size = imageSource.getWidth() / 25;
+        log.debug("{} font size is {}", fileName, size);
+        return size;
+    }
+
+    private static Font getFont(String text, int size) {
+        Font font = new Font(text, Font.PLAIN, size);
         return font;
     }
 
@@ -313,13 +320,4 @@ public class ImagingSample {
             }
         }
     }
-
-//    private static ImageWriter getImageWriter() {
-//        Iterator<ImageWriter> jpegWriterIt = ImageIO.getImageWritersByFormatName("jpeg");
-//        ImageWriter jpegWriter = jpegWriterIt.next();
-//        ImageWriteParam writeParam = jpegWriter.getDefaultWriteParam();
-//        writeParam.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
-//        writeParam.setCompressionQuality(1.0F);
-//        return jpegWriter;
-//    }
 }
