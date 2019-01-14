@@ -41,31 +41,34 @@ import java.util.*;
  */
 @Slf4j
 public class ImagingSample {
-    private final static File SOURCE_PATH = new File("/Users/junxiaoyang/OneDrive/3寸-无白边-加日期/");
-    private final static File TARGET_PATH = new File("/Users/junxiaoyang/Documents/testdata/imageio/adddate/");
-    private static List<FileNameDateParser> DATEPARSERS = new ArrayList<>();
+    public final static File SOURCE_PATH = new File("/Users/junxiaoyang/OneDrive/3寸-无白边-加日期/");
+    public final static File TARGET_PATH = new File("/Users/junxiaoyang/Documents/testdata/imageio/adddate/");
+    public static List<FileNameDateParser> DATEPARSERS = new ArrayList<>();
     static int hasDate = 0;
     static int noDate = 0;
     static String fileName;
 
     public static void main(String[] args) throws IOException {
-        Properties properties = RegexpPropertyLoader.load();
-        for (String propertyName : properties.stringPropertyNames()) {
-            if (propertyName.endsWith("regexp")) {
-                DATEPARSERS.add(new FileNameDateParser(properties.getProperty(propertyName)));
-            }
-        }
+        DATEPARSERS = RegexpPropertyLoader.load();
+
         ArrayList<File> sourceFiles = Lists.newArrayList();
         if (SOURCE_PATH.isDirectory()) {
             sourceFiles.addAll(Arrays.asList(Objects.requireNonNull(SOURCE_PATH.listFiles())));
         }
 
         for (File sourceFile : sourceFiles) {
-//            revertName(sourceFile);
+            fileName = sourceFile.getName();
+            if (!sourceFile.getName().startsWith("CIMG")) {
+                continue;
+            }
+//            BasicFileAttributes basicFileAttributes = Files.readAttributes(sourceFile.toPath(), BasicFileAttributes.class);
+//            FileTime fileTime = basicFileAttributes.creationTime();
+//            log.info("{}: {}", fileName, fileTime.toString());
+
+            //            revertName(sourceFile);
             try {
-                fileName = sourceFile.getName();
 //                printAllTags(sourceFile);
-                writetofile(sourceFile);
+//                writetofile(sourceFile);
             } catch (Exception e) {
                 log.error("file: {} message: {}", sourceFile.getName(), e.getMessage());
             }
@@ -99,7 +102,7 @@ public class ImagingSample {
     }
 
 
-    private static String getDate(File source) {
+    public static String getDate(File source) {
         String formatDate;
         try {
             Metadata metadata = ImageMetadataReader.readMetadata(source);
@@ -116,10 +119,10 @@ public class ImagingSample {
             }
             log.debug("{} no datetime in filename", source.getName());
             //3.modifytime
-            formatDate = getDateTimeFromDirectory(metadata.getFirstDirectoryOfType(FileSystemDirectory.class));
-            if (formatDate != null) {
-                return formatDate;
-            }
+//            formatDate = getDateTimeFromDirectory(metadata.getFirstDirectoryOfType(FileSystemDirectory.class));
+//            if (formatDate != null) {
+//                return formatDate;
+//            }
             log.warn("{} no datetime in file use drew imaging", source.getName());
             return null;
         } catch (ImageProcessingException | IOException e) {
@@ -151,7 +154,7 @@ public class ImagingSample {
             return null;
         }
         String dateTime = null;
-        Date date = directory.getDateOriginal();
+        Date date = directory.getDateOriginal(TimeZone.getDefault());
         if (date != null) {
             dateTime = formatDateTime(date);
         }

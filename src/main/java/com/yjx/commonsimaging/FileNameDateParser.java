@@ -1,5 +1,6 @@
 package com.yjx.commonsimaging;
 
+import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 
@@ -18,6 +19,7 @@ import java.util.regex.Pattern;
  * @Date 2019-01-12 15:17
  */
 @Slf4j
+@Data
 public class FileNameDateParser {
     public final static DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private Pattern pattern;

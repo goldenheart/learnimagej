@@ -22,7 +22,7 @@ public class RegexpTest {
 
     @Test
     public void testRegex() throws IOException {
-        Properties properties = RegexpPropertyLoader.load();
+        Properties properties = RegexpPropertyLoader.init();
         for (String name : properties.stringPropertyNames()) {
             if (name.endsWith("regexp")) {
                 String text = properties.getProperty(name + ".testtext");
@@ -30,7 +30,7 @@ public class RegexpTest {
                 Pattern compile = Pattern.compile(property);
                 Matcher matcher = compile.matcher(text);
                 boolean matches = matcher.matches();
-                Assert.assertTrue(matches);
+                Assert.assertTrue("regex: ," + property + " text: " + text, matches);
             }
         }
     }
