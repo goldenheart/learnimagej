@@ -3,6 +3,9 @@ package com.yjx;
 import com.drew.imaging.ImageMetadataReader;
 import com.drew.imaging.ImageProcessingException;
 import com.drew.metadata.Metadata;
+import com.drew.metadata.MetadataException;
+import com.drew.metadata.exif.ExifIFD0Directory;
+import com.drew.metadata.exif.ExifSubIFDDirectory;
 import com.yjx.commonsimaging.ImagingSample;
 import com.yjx.commonsimaging.RegexpPropertyLoader;
 import lombok.extern.slf4j.Slf4j;
@@ -28,8 +31,8 @@ import java.util.StringTokenizer;
 @Slf4j
 public class MetaDataTest {
     final static File SOURCE_PATH = ImagingSample.SOURCE_PATH;
-    FilenameFilter filenameFilter = (dir, name) -> true;
-//    FilenameFilter filenameFilter = (dir, name) -> name.startsWith("IMG_20180925_");
+    //    FilenameFilter filenameFilter = (dir, name) -> true;
+    FilenameFilter filenameFilter = (dir, name) -> name.startsWith("IMG_5187");
 //    FilenameFilter filenameFilter = (dir, name) -> name.startsWith("CIMG");
 
     @Test
@@ -67,12 +70,11 @@ public class MetaDataTest {
     }
 
     @Test
-    public void testImaging() throws IOException, ImageReadException, ImageProcessingException {
+    public void testImaging() throws IOException, ImageProcessingException, MetadataException {
         for (File file : SOURCE_PATH.listFiles(filenameFilter)) {
             log.info("-------------------------- {} --------------------------", file.getName());
             Metadata metadata = ImageMetadataReader.readMetadata(file);
-//            ExifSubIFDDirectory directory = metadata.getFirstDirectoryOfType(ExifSubIFDDirectory.class);
-//
+            //
 //            Date date = directory.getDate(ExifSubIFDDirectory.TAG_DATETIME_ORIGINAL);
 //
 //            if (date == null) {
@@ -90,6 +92,19 @@ public class MetaDataTest {
                     log.info(tag.toString());
                 });
             });
+        }
+    }
+
+    @Test
+    public void testImageOrientation() throws IOException, ImageProcessingException, MetadataException {
+        for (File file : SOURCE_PATH.listFiles(filenameFilter)) {
+            log.info("-------------------------- {} --------------------------", file.getName());
+            Metadata metadata = ImageMetadataReader.readMetadata(file);
+            ExifIFD0Directory directory = metadata.getFirstDirectoryOfType(ExifIFD0Directory.class);
+            int orientation = directory.getInt(ExifIFD0Directory.TAG_ORIENTATION);
+            String tagName = directory.getTagName(ExifIFD0Directory.TAG_ORIENTATION);
+
+            log.info("tag: {}, orientation: {}", tagName,orientation);
         }
     }
 

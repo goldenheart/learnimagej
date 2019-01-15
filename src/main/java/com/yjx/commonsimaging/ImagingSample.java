@@ -7,7 +7,6 @@ import com.drew.metadata.Metadata;
 import com.drew.metadata.Tag;
 import com.drew.metadata.exif.ExifSubIFDDirectory;
 import com.drew.metadata.file.FileSystemDirectory;
-import com.google.common.collect.Lists;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.sanselan.ImageReadException;
@@ -17,20 +16,19 @@ import org.apache.sanselan.common.IImageMetadata;
 import javax.imageio.*;
 import javax.imageio.stream.ImageOutputStream;
 import java.awt.*;
-import java.awt.color.ColorSpace;
 import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
-import java.awt.image.ColorModel;
-import java.awt.image.ComponentColorModel;
-import java.awt.image.DataBuffer;
 import java.io.File;
+import java.io.FilenameFilter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
-import java.util.*;
+import java.util.TimeZone;
 
 /**
  * @Version 1.0
@@ -47,28 +45,17 @@ public class ImagingSample {
     static int hasDate = 0;
     static int noDate = 0;
     static String fileName;
+    static FilenameFilter filenameFilter = (dir, name) -> name.startsWith("IMG_201608");
+    //    static FilenameFilter filenameFilter = (dir, name) -> true;
+    static Metadata metadata;
 
     public static void main(String[] args) throws IOException {
         DATEPARSERS = RegexpPropertyLoader.load();
 
-        ArrayList<File> sourceFiles = Lists.newArrayList();
-        if (SOURCE_PATH.isDirectory()) {
-            sourceFiles.addAll(Arrays.asList(Objects.requireNonNull(SOURCE_PATH.listFiles())));
-        }
-
-        for (File sourceFile : sourceFiles) {
+        for (File sourceFile : SOURCE_PATH.listFiles(filenameFilter)) {
             fileName = sourceFile.getName();
-            if (!sourceFile.getName().startsWith("CIMG")) {
-                continue;
-            }
-//            BasicFileAttributes basicFileAttributes = Files.readAttributes(sourceFile.toPath(), BasicFileAttributes.class);
-//            FileTime fileTime = basicFileAttributes.creationTime();
-//            log.info("{}: {}", fileName, fileTime.toString());
-
-            //            revertName(sourceFile);
             try {
-//                printAllTags(sourceFile);
-//                writetofile(sourceFile);
+                writetofile(sourceFile);
             } catch (Exception e) {
                 log.error("file: {} message: {}", sourceFile.getName(), e.getMessage());
             }
@@ -83,6 +70,7 @@ public class ImagingSample {
     private static void writetofile(File source) {
         try {
             File osFile = new File(TARGET_PATH.getPath() + "/" + source.getName());
+            metadata = ImageMetadataReader.readMetadata(source);
             String formatDate = getDate(source);
             if (formatDate == null) {
                 noDate++;
@@ -96,7 +84,7 @@ public class ImagingSample {
                 return;
             }
             addTextWatermark(source, formatDate, osFile, format);
-        } catch (IOException | NullPointerException e) {
+        } catch (IOException | NullPointerException | ImageProcessingException e) {
             log.warn("no create date {}", source.getName());
         }
     }
@@ -104,30 +92,24 @@ public class ImagingSample {
 
     public static String getDate(File source) {
         String formatDate;
-        try {
-            Metadata metadata = ImageMetadataReader.readMetadata(source);
-            //1.metadata
-            formatDate = getDateTimeFromDirectory(metadata.getFirstDirectoryOfType(ExifSubIFDDirectory.class));
-            if (formatDate != null) {
-                return formatDate;
-            }
-            log.debug("{} no datetime in exif directory use drew imaging", source.getName());
-            //2.file name
-            formatDate = getDateTimeFromFileName(source);
-            if (formatDate != null) {
-                return formatDate;
-            }
-            log.debug("{} no datetime in filename", source.getName());
-            //3.modifytime
+        //1.metadata
+        formatDate = getDateTimeFromDirectory(metadata.getFirstDirectoryOfType(ExifSubIFDDirectory.class));
+        if (formatDate != null) {
+            return formatDate;
+        }
+        log.debug("{} no datetime in exif directory use drew imaging", source.getName());
+        //2.file name
+        formatDate = getDateTimeFromFileName(source);
+        if (formatDate != null) {
+            return formatDate;
+        }
+        log.debug("{} no datetime in filename", source.getName());
+        //3.modifytime
 //            formatDate = getDateTimeFromDirectory(metadata.getFirstDirectoryOfType(FileSystemDirectory.class));
 //            if (formatDate != null) {
 //                return formatDate;
 //            }
-            log.warn("{} no datetime in file use drew imaging", source.getName());
-            return null;
-        } catch (ImageProcessingException | IOException e) {
-            log.error("{} get metadata error", source.getName());
-        }
+        log.warn("{} no datetime in file use drew imaging", source.getName());
         return null;
     }
 
@@ -246,7 +228,8 @@ public class ImagingSample {
         ImageWriter jpegWriter = getImageWriter(imageFormat);
         ImageWriteParam writeParam = jpegWriter.getDefaultWriteParam();
         writeParam.setProgressiveMode(ImageWriteParam.MODE_COPY_FROM_METADATA);
-        writeParam.setCompressionMode(ImageWriteParam.MODE_COPY_FROM_METADATA);
+        writeParam.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
+        writeParam.setCompressionQuality(1.0f);
         //set output
         try (ImageOutputStream imageOutputStream = ImageIO.createImageOutputStream(destination)) {
             jpegWriter.setOutput(imageOutputStream);
@@ -267,16 +250,19 @@ public class ImagingSample {
     }
 
     private static BufferedImage drawText(String text, BufferedImage imageSource) {
-        ColorSpace sRGBColorSpace = ColorSpace.getInstance(ColorSpace.CS_sRGB);
-        ColorModel colorModel = new ComponentColorModel(sRGBColorSpace, false, false, Transparency.OPAQUE, DataBuffer.TYPE_BYTE);
-        BufferedImage watermarked = new BufferedImage(colorModel, colorModel.createCompatibleWritableRaster(imageSource.getWidth(), imageSource.getHeight()), colorModel.isAlphaPremultiplied(), null);
+        BufferedImage watermarked = new BufferedImage(imageSource.getWidth(), imageSource.getHeight(), BufferedImage.TYPE_INT_RGB);
 
         Graphics2D textGraphics = (Graphics2D) watermarked.getGraphics();
-        textGraphics.drawImage(imageSource, 0, 0, null);
+
+        //set composite
         AlphaComposite alphaChannel = AlphaComposite.getInstance(AlphaComposite.SRC_OVER);
         textGraphics.setComposite(alphaChannel);
-        //微软雅黑 粗体 26号字  投影4像素，或是描边4像素
-        textGraphics.setColor(Color.WHITE);
+
+        //draw image
+        textGraphics.drawImage(imageSource, 0, 0, null);
+
+        //textGraphics.setColor(new Color(245, 245, 220));
+        textGraphics.setColor(new Color(135, 206, 235));
         int size = calculateFontSize(imageSource);
         textGraphics.setFont(getFont("TypoSlab Irregular Shadowed Demo", size));
 
@@ -284,23 +270,25 @@ public class ImagingSample {
         Rectangle2D rect = fontMetrics.getStringBounds(text, textGraphics);
         log.debug("rect h {} w {}", rect.getHeight(), rect.getWidth());
         // calculate center of the imageSource
-        int centerX = imageSource.getWidth() - ((int) rect.getWidth() + 70);
-        int centerY = imageSource.getHeight() - ((int) rect.getHeight());
+        int width = (int) rect.getWidth();
+        int height = (int) rect.getHeight();
 
-//        setGrayRGB(imageSource, watermarked);
-        // add text overlay to the imageSource
+        int centerX = imageSource.getWidth() - (width + width / 30);
+        int centerY = imageSource.getHeight() - height / 3;
+
+        //draw text
         textGraphics.drawString(text, centerX, centerY);
         return watermarked;
     }
 
     private static int calculateFontSize(BufferedImage imageSource) {
-        int size = imageSource.getWidth() / 25;
-        log.debug("{} font size is {}", fileName, size);
+        int size = imageSource.getWidth() / 22;
+        log.info("{} font size is {}", fileName, size);
         return size;
     }
 
     private static Font getFont(String text, int size) {
-        Font font = new Font(text, Font.PLAIN, size);
+        Font font = new Font(text, Font.BOLD, size);
         return font;
     }
 
