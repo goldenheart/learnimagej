@@ -4,9 +4,13 @@ import com.drew.imaging.ImageMetadataReader;
 import com.drew.imaging.ImageProcessingException;
 import com.drew.metadata.Directory;
 import com.drew.metadata.Metadata;
+import com.drew.metadata.MetadataException;
 import com.drew.metadata.Tag;
+import com.drew.metadata.exif.ExifIFD0Directory;
 import com.drew.metadata.exif.ExifSubIFDDirectory;
 import com.drew.metadata.file.FileSystemDirectory;
+import com.google.common.collect.Lists;
+import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.sanselan.ImageReadException;
@@ -16,6 +20,7 @@ import org.apache.sanselan.common.IImageMetadata;
 import javax.imageio.*;
 import javax.imageio.stream.ImageOutputStream;
 import java.awt.*;
+import java.awt.geom.AffineTransform;
 import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
 import java.io.File;
@@ -43,10 +48,10 @@ public class ImagingSample {
     public final static File TARGET_PATH = new File("/Users/junxiaoyang/Documents/testdata/imageio/adddate/");
     public static List<FileNameDateParser> DATEPARSERS = new ArrayList<>();
     static int hasDate = 0;
-    static int noDate = 0;
+    static List<String> noDate = Lists.newArrayList();
     static String fileName;
-    static FilenameFilter filenameFilter = (dir, name) -> name.startsWith("IMG_201608");
-    //    static FilenameFilter filenameFilter = (dir, name) -> true;
+    //    static FilenameFilter filenameFilter = (dir, name) -> name.startsWith("IMG_5187");
+    static FilenameFilter filenameFilter = (dir, name) -> true;
     static Metadata metadata;
 
     public static void main(String[] args) throws IOException {
@@ -61,6 +66,7 @@ public class ImagingSample {
             }
         }
         log.info("has date files {}, no date files {}", hasDate, noDate);
+        noDate.forEach(s -> log.info("no date image: {}", s));
     }
 
     private static final String NO_METADATA = "NoMetadata_";
@@ -73,7 +79,8 @@ public class ImagingSample {
             metadata = ImageMetadataReader.readMetadata(source);
             String formatDate = getDate(source);
             if (formatDate == null) {
-                noDate++;
+                noDate.add(source.getName());
+                Files.copy(source.toPath(), osFile.toPath());
                 log.warn("{} no date info", source.getName());
                 return;
             }
@@ -223,7 +230,7 @@ public class ImagingSample {
         ImageReader jpgReader = getReader(source, imageFormat);
         BufferedImage imageSource = jpgReader.read(0);
 //        draw image
-        BufferedImage bufferedImageOutput = drawText(text, imageSource);
+        BufferedImage bufferedImageOutput = draw(text, imageSource);
         //get and config writer
         ImageWriter jpegWriter = getImageWriter(imageFormat);
         ImageWriteParam writeParam = jpegWriter.getDefaultWriteParam();
@@ -249,40 +256,132 @@ public class ImagingSample {
         return jpgReader;
     }
 
-    private static BufferedImage drawText(String text, BufferedImage imageSource) {
-        BufferedImage watermarked = new BufferedImage(imageSource.getWidth(), imageSource.getHeight(), BufferedImage.TYPE_INT_RGB);
+    private static BufferedImage draw(String text, BufferedImage imageSource) {
+        ExifIFD0Directory exifIFD0Directory = metadata.getFirstDirectoryOfType(ExifIFD0Directory.class);
+        int orientation = 0;
+        try {
+            orientation = exifIFD0Directory.getInt(ExifIFD0Directory.TAG_ORIENTATION);
+        } catch (MetadataException e) {
+            log.debug("{} no orientation tag", fileName);
+        }
+        WidthAndHeight widthAndHeight = translateWidthAndHeight(orientation, imageSource.getWidth(), imageSource.getHeight());
+        BufferedImage watermarked = new BufferedImage(widthAndHeight.getWidth(), widthAndHeight.getHeight(), BufferedImage.TYPE_INT_RGB);
 
-        Graphics2D textGraphics = (Graphics2D) watermarked.getGraphics();
+        Graphics2D textGraphics = watermarked.createGraphics();
 
         //set composite
         AlphaComposite alphaChannel = AlphaComposite.getInstance(AlphaComposite.SRC_OVER);
         textGraphics.setComposite(alphaChannel);
 
+        AffineTransform oringinalTransform = textGraphics.getTransform();
+        log.info("w: {}, h: {}", imageSource.getWidth(), imageSource.getHeight());
         //draw image
+        configAffineTransform(widthAndHeight, textGraphics, orientation);
         textGraphics.drawImage(imageSource, 0, 0, null);
 
-        //textGraphics.setColor(new Color(245, 245, 220));
+        //recover transform
+        textGraphics.setTransform(oringinalTransform);
+
+        //config font
         textGraphics.setColor(new Color(135, 206, 235));
-        int size = calculateFontSize(imageSource);
+        textGraphics.setColor(Color.WHITE);
+        int size = calculateFontSize(widthAndHeight.getWidth());
         textGraphics.setFont(getFont("TypoSlab Irregular Shadowed Demo", size));
 
-        FontMetrics fontMetrics = textGraphics.getFontMetrics();
-        Rectangle2D rect = fontMetrics.getStringBounds(text, textGraphics);
-        log.debug("rect h {} w {}", rect.getHeight(), rect.getWidth());
-        // calculate center of the imageSource
-        int width = (int) rect.getWidth();
-        int height = (int) rect.getHeight();
-
-        int centerX = imageSource.getWidth() - (width + width / 30);
-        int centerY = imageSource.getHeight() - height / 3;
-
+        Coordinate fontCoordinate = calculateCoordinate(textGraphics, text, widthAndHeight.getWidth(), widthAndHeight.getHeight());
         //draw text
-        textGraphics.drawString(text, centerX, centerY);
+        textGraphics.drawString(text, fontCoordinate.getX(), fontCoordinate.getY());
         return watermarked;
     }
 
-    private static int calculateFontSize(BufferedImage imageSource) {
-        int size = imageSource.getWidth() / 22;
+    //see http://sylvana.net/jpegcrop/exif_orientation.html
+    private static void configAffineTransform(WidthAndHeight widthAndHeight, Graphics2D textGraphics, int orientation) {
+        AffineTransform affineTransform = new AffineTransform();
+        switch (orientation) {
+            case 0:
+            case 1:
+                return;
+            case 2://flip horizon
+                affineTransform.scale(-1, 1);
+                affineTransform.translate(-widthAndHeight.getWidth(), 0);
+                break;
+            case 3://flip horizon and vertical
+                affineTransform.scale(-1, -1);
+                affineTransform.translate(-widthAndHeight.getWidth(), -widthAndHeight.getHeight());
+                break;
+            case 4://flip vertical
+                affineTransform.scale(1, -1);
+                affineTransform.translate(0, -widthAndHeight.getHeight());
+                break;
+//            case 5://flip horizon and rotate
+//                affineTransform.scale(-1, 1);
+//                affineTransform.rotate(-Math.toRadians(90));
+//                affineTransform.translate(0, -widthAndHeight.getWidth());
+//                break;
+            case 6:
+                affineTransform.rotate(Math.toRadians(90));
+                affineTransform.translate(0, -widthAndHeight.getWidth());
+                break;
+            case 8://rotate -90
+                affineTransform.rotate(-Math.toRadians(90));
+                affineTransform.translate(-widthAndHeight.getHeight(), 0);
+                break;
+        }
+        textGraphics.setTransform(affineTransform);
+    }
+
+    //只处理0,90,180,270
+    private static WidthAndHeight translateWidthAndHeight(int orientation, int width, int height) {
+        WidthAndHeight widthAndHeight = new WidthAndHeight();
+        switch (orientation) {
+            case 0:
+            case 1:
+            case 2:
+            case 3:
+            case 4:
+                widthAndHeight.setWidth(width);
+                widthAndHeight.setHeight(height);
+                break;
+            case 5:
+            case 6:
+            case 7:
+            case 8:
+                widthAndHeight.setWidth(height);
+                widthAndHeight.setHeight(width);
+                break;
+        }
+        return widthAndHeight;
+    }
+
+    @Data
+    static class WidthAndHeight {
+        private int width;
+        private int height;
+    }
+
+    @Data
+    static class Coordinate {
+        private int x;
+        private int y;
+
+    }
+
+    private static Coordinate calculateCoordinate(Graphics2D graphics2D, String text, int imageWidth, int imageHeight) {
+        FontMetrics fontMetrics = graphics2D.getFontMetrics();
+        Rectangle2D rect = fontMetrics.getStringBounds(text, graphics2D);
+        int width = (int) rect.getWidth();
+        int height = (int) rect.getHeight();
+        log.debug("rect h {} w {}", rect.getHeight(), rect.getWidth());
+        int centerX = imageWidth - (width + width / 30);
+        int centerY = imageHeight - height / 3;
+        Coordinate coordinate = new Coordinate();
+        coordinate.setX(centerX);
+        coordinate.setY(centerY);
+        return coordinate;
+    }
+
+    private static int calculateFontSize(int width) {
+        int size = width / 22;
         log.info("{} font size is {}", fileName, size);
         return size;
     }
