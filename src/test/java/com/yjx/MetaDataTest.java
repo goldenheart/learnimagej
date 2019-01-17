@@ -5,7 +5,6 @@ import com.drew.imaging.ImageProcessingException;
 import com.drew.metadata.Metadata;
 import com.drew.metadata.MetadataException;
 import com.drew.metadata.exif.ExifIFD0Directory;
-import com.drew.metadata.exif.ExifSubIFDDirectory;
 import com.yjx.commonsimaging.ImagingSample;
 import com.yjx.commonsimaging.RegexpPropertyLoader;
 import lombok.extern.slf4j.Slf4j;
@@ -35,11 +34,13 @@ public class MetaDataTest {
     FilenameFilter filenameFilter = (dir, name) -> name.startsWith("IMG_5187");
 //    FilenameFilter filenameFilter = (dir, name) -> name.startsWith("CIMG");
 
+    File[] files = SOURCE_PATH.listFiles(filenameFilter);
+
     @Test
     public void testGetdate() throws IOException {
-        ImagingSample.DATEPARSERS = RegexpPropertyLoader.load();
-        for (File file : SOURCE_PATH.listFiles(filenameFilter)) {
-            String date = ImagingSample.getDate(file);
+        for (File file : files) {
+            ImagingSample imagingSample = new ImagingSample(RegexpPropertyLoader.load(), file);
+            String date = imagingSample.getDate();
             if (date == null || LocalDateTime.parse(date, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")).isAfter(LocalDateTime.of(2019, 01, 01, 00, 00))) {
                 log.info("{} : {}", file.getName(), date);
             }
@@ -48,7 +49,7 @@ public class MetaDataTest {
 
     @Test
     public void testImageIO() throws IOException {
-        for (File file : SOURCE_PATH.listFiles(filenameFilter)) {
+        for (File file : files) {
             BufferedImage read = ImageIO.read(file);
             String[] propertyNames = read.getPropertyNames();
             if (propertyNames == null) {
@@ -63,7 +64,7 @@ public class MetaDataTest {
 
     @Test
     public void testSanselan() throws IOException, ImageReadException {
-        for (File file : SOURCE_PATH.listFiles(filenameFilter)) {
+        for (File file : files) {
             IImageMetadata metadata = Sanselan.getMetadata(file);
             log.info(metadata.toString(file.getName()));
         }
@@ -71,7 +72,7 @@ public class MetaDataTest {
 
     @Test
     public void testImaging() throws IOException, ImageProcessingException, MetadataException {
-        for (File file : SOURCE_PATH.listFiles(filenameFilter)) {
+        for (File file : files) {
             log.info("-------------------------- {} --------------------------", file.getName());
             Metadata metadata = ImageMetadataReader.readMetadata(file);
             //
@@ -97,20 +98,20 @@ public class MetaDataTest {
 
     @Test
     public void testImageOrientation() throws IOException, ImageProcessingException, MetadataException {
-        for (File file : SOURCE_PATH.listFiles(filenameFilter)) {
+        for (File file : files) {
             log.info("-------------------------- {} --------------------------", file.getName());
             Metadata metadata = ImageMetadataReader.readMetadata(file);
             ExifIFD0Directory directory = metadata.getFirstDirectoryOfType(ExifIFD0Directory.class);
             int orientation = directory.getInt(ExifIFD0Directory.TAG_ORIENTATION);
             String tagName = directory.getTagName(ExifIFD0Directory.TAG_ORIENTATION);
 
-            log.info("tag: {}, orientation: {}", tagName,orientation);
+            log.info("tag: {}, orientation: {}", tagName, orientation);
         }
     }
 
     @Test
     public void testBufferedReader() throws IOException {
-        for (File file : SOURCE_PATH.listFiles(filenameFilter)) {
+        for (File file : files) {
             FileInputStream fileInputStream = new FileInputStream(file);
             InputStreamReader inputStreamReader = new InputStreamReader(fileInputStream);
             BufferedReader bufferedReader = new BufferedReader(inputStreamReader);

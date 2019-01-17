@@ -35,6 +35,8 @@ import java.util.Date;
 import java.util.List;
 import java.util.TimeZone;
 
+import static com.yjx.commonsimaging.FileStatusTag.*;
+
 /**
  * @Version 1.0
  * @Since JDK1.8
@@ -46,19 +48,32 @@ import java.util.TimeZone;
 public class ImagingSample {
     public final static File SOURCE_PATH = new File("/Users/junxiaoyang/OneDrive/3寸-无白边-加日期/");
     public final static File TARGET_PATH = new File("/Users/junxiaoyang/Documents/testdata/imageio/adddate/");
-    public static List<FileNameDateParser> DATEPARSERS = new ArrayList<>();
+    public final static FilenameFilter FILENAMEFILTER = (dir, name) -> true;
+    private final File[] files;
+    public List<FileNameDateParser> dateParsers = new ArrayList<>();
     static int hasDate = 0;
-    static List<String> noDate = Lists.newArrayList();
-    static String fileName;
+    List<String> noDate = Lists.newArrayList();
+    String fileName;
     //    static FilenameFilter filenameFilter = (dir, name) -> name.startsWith("IMG_5187");
-    static FilenameFilter filenameFilter = (dir, name) -> true;
-    static Metadata metadata;
+    Metadata metadata;
+    private File sourceFile;
+
+    public ImagingSample(List<FileNameDateParser> load, File... files) {
+        this.dateParsers = load;
+        this.files = files;
+    }
 
     public static void main(String[] args) throws IOException {
-        DATEPARSERS = RegexpPropertyLoader.load();
 
-        for (File sourceFile : SOURCE_PATH.listFiles(filenameFilter)) {
-            fileName = sourceFile.getName();
+        File[] files = SOURCE_PATH.listFiles(FILENAMEFILTER);
+        ImagingSample imagingSample = new ImagingSample(RegexpPropertyLoader.load(), files);
+        imagingSample.writetofile();
+    }
+
+    private void writetofile() {
+        for (File sourceFile : files) {
+            this.sourceFile = sourceFile;
+            this.fileName = sourceFile.getName();
             try {
                 writetofile(sourceFile);
             } catch (Exception e) {
@@ -69,11 +84,7 @@ public class ImagingSample {
         noDate.forEach(s -> log.info("no date image: {}", s));
     }
 
-    private static final String NO_METADATA = "NoMetadata_";
-    private static final String DATA_BLOCK = "Datablock_";
-    private static final String NO_DATE = "NoDate_";
-
-    private static void writetofile(File source) {
+    private void writetofile(File source) {
         try {
             File osFile = new File(TARGET_PATH.getPath() + "/" + source.getName());
             metadata = ImageMetadataReader.readMetadata(source);
@@ -96,8 +107,11 @@ public class ImagingSample {
         }
     }
 
+    public String getDate() {
+        return getDate(this.sourceFile);
+    }
 
-    public static String getDate(File source) {
+    public String getDate(File source) {
         String formatDate;
         //1.metadata
         formatDate = getDateTimeFromDirectory(metadata.getFirstDirectoryOfType(ExifSubIFDDirectory.class));
@@ -120,8 +134,8 @@ public class ImagingSample {
         return null;
     }
 
-    private static String getDateTimeFromFileName(File source) {
-        for (FileNameDateParser dateparser : DATEPARSERS) {
+    private String getDateTimeFromFileName(File source) {
+        for (FileNameDateParser dateparser : dateParsers) {
             boolean match = dateparser.isMatch(source.getName());
             if (!match) {
                 continue;
@@ -131,14 +145,14 @@ public class ImagingSample {
         return null;
     }
 
-    private static String formatDateTime(Date date) {
+    private String formatDateTime(Date date) {
         String dateFormatted;
         LocalDateTime localDateTime = LocalDateTime.ofInstant(date.toInstant(), ZoneId.systemDefault());
         dateFormatted = localDateTime.format(FileNameDateParser.FORMATTER);
         return dateFormatted;
     }
 
-    private static String getDateTimeFromDirectory(ExifSubIFDDirectory directory) {
+    private String getDateTimeFromDirectory(ExifSubIFDDirectory directory) {
         if (directory == null) {
             return null;
         }
@@ -150,7 +164,7 @@ public class ImagingSample {
         return dateTime;
     }
 
-    private static String getDateTimeFromDirectory(FileSystemDirectory directory) {
+    private String getDateTimeFromDirectory(FileSystemDirectory directory) {
         String dateTime = null;
         if (directory == null) {
             return null;
@@ -162,7 +176,7 @@ public class ImagingSample {
         return dateTime;
     }
 
-    private static void printAllTags(File file) {
+    private void printAllTags(File file) {
         try {
             IImageMetadata metadata = Sanselan.getMetadata(file);
             if (metadata == null) {
@@ -177,7 +191,7 @@ public class ImagingSample {
         }
     }
 
-    private static void printAllTags(Iterable<Directory> directories) {
+    private void printAllTags(Iterable<Directory> directories) {
         for (Directory directory : directories) {
             for (Tag tag : directory.getTags()) {
                 log.info("{}, {}, {}", tag.getDirectoryName(), tag.getTagName(), tag.toString());
@@ -185,7 +199,7 @@ public class ImagingSample {
         }
     }
 
-    private static String getFormat(File source) {
+    private String getFormat(File source) {
         if (StringUtils.endsWithIgnoreCase(source.getName(), "JPG") || StringUtils.endsWithIgnoreCase(source.getName(), "JPEG")) {
             return "JPEG";
         }
@@ -195,7 +209,7 @@ public class ImagingSample {
         return null;
     }
 
-    private static void revertName(File file) {
+    private void revertName(File file) {
         String newName = null;
         if (StringUtils.startsWith(file.getName(), NO_DATE)) {
             newName = StringUtils.substring(file.getName(), NO_DATE.length());
@@ -212,7 +226,7 @@ public class ImagingSample {
         rename(file, newName);
     }
 
-    private static void rename(File file, String newName) {
+    private void rename(File file, String newName) {
         log.info("rename {} to {}", file.getName(), newName);
         boolean b = file.renameTo(new File(SOURCE_PATH.getPath() + "/" + newName));
         if (!b) {
@@ -220,12 +234,12 @@ public class ImagingSample {
         }
     }
 
-    private static void moveFile(String name) throws IOException {
+    private void moveFile(String name) throws IOException {
         log.info("move file {}", name);
         Files.move(Paths.get(SOURCE_PATH + name), Paths.get(TARGET_PATH + name));
     }
 
-    private static void addTextWatermark(File source, String text, File destination, String imageFormat) throws IOException {
+    private void addTextWatermark(File source, String text, File destination, String imageFormat) throws IOException {
         //Get Reader
         ImageReader jpgReader = getReader(source, imageFormat);
         BufferedImage imageSource = jpgReader.read(0);
@@ -246,17 +260,17 @@ public class ImagingSample {
         }
     }
 
-    private static ImageWriter getImageWriter(String imageFormat) {
+    private ImageWriter getImageWriter(String imageFormat) {
         return ImageIO.getImageWritersByFormatName(imageFormat).next();
     }
 
-    private static ImageReader getReader(File file, String imageFormat) throws IOException {
+    private ImageReader getReader(File file, String imageFormat) throws IOException {
         ImageReader jpgReader = ImageIO.getImageReadersByFormatName(imageFormat).next();
         jpgReader.setInput(ImageIO.createImageInputStream(file));
         return jpgReader;
     }
 
-    private static BufferedImage draw(String text, BufferedImage imageSource) {
+    private BufferedImage draw(String text, BufferedImage imageSource) {
         ExifIFD0Directory exifIFD0Directory = metadata.getFirstDirectoryOfType(ExifIFD0Directory.class);
         int orientation = 0;
         try {
@@ -295,7 +309,7 @@ public class ImagingSample {
     }
 
     //see http://sylvana.net/jpegcrop/exif_orientation.html
-    private static void configAffineTransform(WidthAndHeight widthAndHeight, Graphics2D textGraphics, int orientation) {
+    private void configAffineTransform(WidthAndHeight widthAndHeight, Graphics2D textGraphics, int orientation) {
         AffineTransform affineTransform = new AffineTransform();
         switch (orientation) {
             case 0:
@@ -331,7 +345,7 @@ public class ImagingSample {
     }
 
     //只处理0,90,180,270
-    private static WidthAndHeight translateWidthAndHeight(int orientation, int width, int height) {
+    private WidthAndHeight translateWidthAndHeight(int orientation, int width, int height) {
         WidthAndHeight widthAndHeight = new WidthAndHeight();
         switch (orientation) {
             case 0:
@@ -366,7 +380,7 @@ public class ImagingSample {
 
     }
 
-    private static Coordinate calculateCoordinate(Graphics2D graphics2D, String text, int imageWidth, int imageHeight) {
+    private Coordinate calculateCoordinate(Graphics2D graphics2D, String text, int imageWidth, int imageHeight) {
         FontMetrics fontMetrics = graphics2D.getFontMetrics();
         Rectangle2D rect = fontMetrics.getStringBounds(text, graphics2D);
         int width = (int) rect.getWidth();
@@ -380,18 +394,18 @@ public class ImagingSample {
         return coordinate;
     }
 
-    private static int calculateFontSize(int width) {
+    private int calculateFontSize(int width) {
         int size = width / 22;
         log.info("{} font size is {}", fileName, size);
         return size;
     }
 
-    private static Font getFont(String text, int size) {
+    private Font getFont(String text, int size) {
         Font font = new Font(text, Font.BOLD, size);
         return font;
     }
 
-    private static void setGrayRGB(BufferedImage imageSource, BufferedImage watermarked) {
+    private void setGrayRGB(BufferedImage imageSource, BufferedImage watermarked) {
         for (int y = 0; y < imageSource.getHeight(); y++) {
             for (int x = 0; x < imageSource.getWidth(); x++) {
                 int p = imageSource.getRGB(x, y);
